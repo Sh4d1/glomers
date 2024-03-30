@@ -1,50 +1,49 @@
 mod message;
 mod server;
-mod services;
+
+use std::time::Duration;
 
 use message::Message;
 use server::Server;
 use tokio::io::AsyncBufReadExt;
-use tokio::io::{self, AsyncWriteExt};
-use tokio::sync::mpsc;
+use tokio::{io, signal, time};
 
 #[tokio::main]
 async fn main() {
+    let mut gossip_interval = time::interval(Duration::from_millis(200));
+    let mut server = Server::new();
+
     let stdin = io::stdin();
     let reader = io::BufReader::new(stdin);
     let mut lines = reader.lines();
 
-    let server = Server::new();
-
-    let (tx, mut rx) = mpsc::unbounded_channel::<Message>();
-
-    tokio::spawn(async move {
-        let mut stdout = io::stdout();
-        while let Some(msg) = rx.recv().await {
-            stdout
-                .write_all(serde_json::to_string(&msg).unwrap().as_bytes())
-                .await
-                .unwrap();
-            stdout.write_all(b"\n").await.unwrap();
-            stdout.flush().await.unwrap();
-        }
-    });
-
-    while let Some(line) = lines.next_line().await.unwrap() {
-        let server = server.clone();
-        let tx = tx.clone();
-        tokio::spawn(async move {
-            match serde_json::from_str::<Message>(&line) {
-                Ok(msg) => match server.handle(msg, tx).await {
-                    Ok(_) => {}
-                    Err(e) => {
-                        eprintln!("Error handling echo message: {:?}", e);
+    loop {
+        tokio::select! {
+            _ = gossip_interval.tick() => {
+                server.gossip().await;
+            }
+            line = lines.next_line() => {
+                match line {
+                    Ok(Some(line)) => {
+                        if let Ok(msg) = serde_json::from_str::<Message>(&line) {
+                            server.handle(msg).await.unwrap();
+                        }
                     }
-                },
-                Err(e) => {
-                    eprintln!("Error: {:?} : {:?}", e, line);
+                    Ok(None) => {
+                        server.shutdown();
+                    }
+                    Err(e) => eprintln!("Error reading line: {:?}", e),
                 }
             }
-        });
+            _ = server.shutdown.cancelled() => {
+                break;
+            }
+            _ = signal::ctrl_c() => {
+                server.shutdown();
+            }
+        }
     }
+
+    eprintln!("Server shutting down");
+    server.tracker.wait().await;
 }

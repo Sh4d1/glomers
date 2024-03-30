@@ -1,33 +1,50 @@
+use std::collections::{HashMap, HashSet};
+
 use serde::{Deserialize, Serialize};
 
-use crate::services::{echo::Echo, generate::GenerateOk};
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Init {
-    pub node_id: String,
-    pub node_ids: Vec<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "type")]
+#[serde(rename_all = "snake_case")]
 pub enum MessageType {
-    #[serde(rename = "init")]
-    Init(Init),
-    #[serde(rename = "init_ok")]
+    Init {
+        node_id: String,
+        node_ids: Vec<String>,
+    },
     InitOk,
 
-    #[serde(rename = "echo")]
-    Echo(Echo),
-    #[serde(rename = "echo_ok")]
-    EchoOk(Echo),
+    Echo {
+        echo: String,
+    },
+    EchoOk {
+        echo: String,
+    },
 
-    #[serde(rename = "generate")]
     Generate,
-    #[serde(rename = "generate_ok")]
-    GenerateOk(GenerateOk),
+    GenerateOk {
+        id: String,
+    },
+
+    Broadcast {
+        message: u64,
+    },
+    BroadcastOk,
+
+    Gossip {
+        values: HashSet<u64>,
+    },
+
+    Read,
+    ReadOk {
+        messages: Vec<u64>,
+    },
+
+    Topology {
+        topology: HashMap<String, HashSet<String>>,
+    },
+    TopologyOk,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Body {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub msg_id: Option<u64>,
@@ -37,7 +54,7 @@ pub struct Body {
     pub message_type: MessageType,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Message {
     pub src: String,
     pub dest: String,
