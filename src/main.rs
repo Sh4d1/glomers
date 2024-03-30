@@ -10,7 +10,7 @@ use tokio::{io, signal, time};
 
 #[tokio::main]
 async fn main() {
-    let mut gossip_interval = time::interval(Duration::from_millis(200));
+    let mut gossip_interval = time::interval(Duration::from_millis(150));
     let mut server = Server::new();
 
     let stdin = io::stdin();
@@ -20,13 +20,13 @@ async fn main() {
     loop {
         tokio::select! {
             _ = gossip_interval.tick() => {
-                server.gossip().await;
+                server.gossip();
             }
             line = lines.next_line() => {
                 match line {
                     Ok(Some(line)) => {
                         if let Ok(msg) = serde_json::from_str::<Message>(&line) {
-                            server.handle(msg).await.unwrap();
+                            server.handle(msg);
                         }
                     }
                     Ok(None) => {

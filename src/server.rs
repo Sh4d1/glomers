@@ -1,6 +1,5 @@
 use crate::message::{Body, Message, MessageType};
-use anyhow::Result;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use tokio::{
     io::{self, AsyncWriteExt},
     sync::mpsc,
@@ -12,7 +11,7 @@ pub struct Server {
     tx: mpsc::UnboundedSender<Message>,
     node_id: String,
     node_ids: Vec<String>,
-    neighbours: HashMap<String, HashSet<u64>>,
+    neighbours: HashSet<String>,
     values: HashSet<u64>,
 
     pub shutdown: CancellationToken,
@@ -68,16 +67,11 @@ impl Server {
         }
     }
 
-    pub async fn gossip(&mut self) {
+    pub fn gossip(&mut self) {
         let values: Vec<u64> = self.values.iter().copied().collect();
-        self.neighbours.iter().for_each(|(node_id, known)| {
-            let values: Vec<u64> = values
-                .iter()
-                .filter(|v| !known.contains(v))
-                .copied()
-                .collect();
+        self.neighbours.iter().for_each(|node_id| {
             if !values.is_empty() {
-                self.send_gossip(node_id.clone(), values);
+                self.send_gossip(node_id.clone(), values.to_vec());
             }
         });
     }
@@ -97,7 +91,7 @@ impl Server {
         self.tx.send(msg).unwrap();
     }
 
-    pub async fn handle(&mut self, msg: Message) -> Result<()> {
+    pub fn handle(&mut self, msg: Message) {
         let mut msg = msg;
 
         std::mem::swap(&mut msg.src, &mut msg.dest);
@@ -112,29 +106,13 @@ impl Server {
                 self.node_ids = node_ids;
                 self.node_ids.sort();
 
-                let n = 5;
+                // star topology
+                self.neighbours = if self.node_id == self.node_ids[0] {
+                    self.node_ids.iter().skip(1).cloned().collect()
+                } else {
+                    [self.node_ids[0].clone()].into()
+                };
 
-                let current_pos = self
-                    .node_ids
-                    .iter()
-                    .position(|v| v == &self.node_id)
-                    .expect("current node not in node list")
-                    % n;
-
-                self.neighbours = self
-                    .node_ids
-                    .iter()
-                    .enumerate()
-                    .filter_map(|(i, node)| {
-                        if (i + 1) % n == current_pos {
-                            Some((node.clone(), HashSet::new()))
-                        } else {
-                            None
-                        }
-                    })
-                    .collect();
-
-                eprintln!("neighbours: {:?}", self.neighbours);
                 MessageType::InitOk
             }
 
@@ -148,30 +126,38 @@ impl Server {
                 self.values.insert(message);
                 MessageType::BroadcastOk
             }
-
             MessageType::Read => {
                 let messages: Vec<u64> = self.values.iter().copied().collect();
                 MessageType::ReadOk { messages }
             }
-
             MessageType::Topology { .. } => MessageType::TopologyOk,
-
             MessageType::Gossip { values } => {
                 self.values.extend(values.clone());
-                self.neighbours.entry(msg.dest).or_default().extend(values);
-                return Ok(());
+                return;
             }
+
+            MessageType::Add { delta } => {
+                let message = self.values.iter().max().unwrap_or(&0) + delta;
+                self.values.insert(message);
+                MessageType::AddOk
+            }
+
+            // MessageType::Read => {
+            //     let value = self.values.iter().max().copied().unwrap_or(0);
+            //     MessageType::ReadOk { value }
+            // }
 
             MessageType::InitOk
             | MessageType::EchoOk { .. }
-            | MessageType::GenerateOk { .. }
+            | MessageType::AddOk
             | MessageType::ReadOk { .. }
+            | MessageType::GenerateOk { .. }
+            // | MessageType::BrdReadOk { .. }
             | MessageType::BroadcastOk
-            | MessageType::TopologyOk => return Ok(()),
+            | MessageType::TopologyOk => return,
         };
 
         msg.body.message_type = message_type;
-        self.tx.send(msg)?;
-        Ok(())
+        _ = self.tx.send(msg);
     }
 }

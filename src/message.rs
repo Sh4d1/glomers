@@ -12,6 +12,7 @@ pub enum MessageType {
     },
     InitOk,
 
+    // echo
     Echo {
         echo: String,
     },
@@ -19,11 +20,13 @@ pub enum MessageType {
         echo: String,
     },
 
+    // unique ID
     Generate,
     GenerateOk {
         id: String,
     },
 
+    // broadcast
     Broadcast {
         message: u64,
     },
@@ -33,6 +36,7 @@ pub enum MessageType {
         values: HashSet<u64>,
     },
 
+    // this should be read, but read is used for the grow only
     Read,
     ReadOk {
         messages: Vec<u64>,
@@ -42,6 +46,17 @@ pub enum MessageType {
         topology: HashMap<String, HashSet<String>>,
     },
     TopologyOk,
+
+    // grow only counter
+    Add {
+        delta: u64,
+    },
+    AddOk,
+    // Read,
+    // ReadOk {
+    //     value: u64,
+    // },
+    // kafka style log
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
