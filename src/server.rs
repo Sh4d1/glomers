@@ -1,5 +1,5 @@
 use crate::message::{Body, Message, MessageType};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use tokio::{
     io::{self, AsyncWriteExt},
     sync::mpsc,
@@ -13,6 +13,9 @@ pub struct Server {
     node_ids: Vec<String>,
     neighbours: HashSet<String>,
     values: HashSet<u64>,
+
+    counter: u64,
+    known_counter: HashMap<String, u64>,
 
     pub shutdown: CancellationToken,
     pub tracker: TaskTracker,
@@ -62,28 +65,48 @@ impl Server {
             node_ids: Default::default(),
             neighbours: Default::default(),
             values: Default::default(),
+            counter: 0,
+            known_counter: Default::default(),
             shutdown,
             tracker,
         }
     }
 
     pub fn gossip(&mut self) {
-        let values: Vec<u64> = self.values.iter().copied().collect();
+        let values: HashSet<u64> = self.values.iter().copied().collect();
         self.neighbours.iter().for_each(|node_id| {
             if !values.is_empty() {
-                self.send_gossip(node_id.clone(), values.to_vec());
+                self.send_gossip(
+                    node_id.clone(),
+                    MessageType::Gossip {
+                        values: values.clone(),
+                        counter: 0,
+                    },
+                );
             }
         });
+        if self.counter > 0 {
+            self.node_ids.iter().for_each(|node_id| {
+                self.send_gossip(
+                    node_id.clone(),
+                    MessageType::Gossip {
+                        values: Default::default(),
+                        counter: self.counter,
+                    },
+                );
+            });
+        }
     }
 
-    pub fn send_gossip(&self, node_id: String, values: Vec<u64>) {
+    pub fn send_gossip(&self, node_id: String, gossip: MessageType) {
+        if self.node_id == node_id {
+            return;
+        }
         let msg = Message {
             src: self.node_id.clone(),
             dest: node_id,
             body: Body {
-                message_type: MessageType::Gossip {
-                    values: values.into_iter().collect(),
-                },
+                message_type: gossip,
                 msg_id: None,
                 in_reply_to: None,
             },
@@ -126,35 +149,36 @@ impl Server {
                 self.values.insert(message);
                 MessageType::BroadcastOk
             }
-            MessageType::Read => {
+            MessageType::BrdRead => {
                 let messages: Vec<u64> = self.values.iter().copied().collect();
-                MessageType::ReadOk { messages }
+                MessageType::BrdReadOk { messages }
             }
             MessageType::Topology { .. } => MessageType::TopologyOk,
-            MessageType::Gossip { values } => {
+            MessageType::Gossip { values, counter } => {
                 self.values.extend(values.clone());
+                if counter != 0 {
+                    self.known_counter.insert(msg.dest.clone(), counter);
+                }
                 return;
             }
 
             MessageType::Add { delta } => {
-                let message = self.values.iter().max().unwrap_or(&0) + delta;
-                self.values.insert(message);
+                self.counter += delta;
                 MessageType::AddOk
             }
 
-            // MessageType::Read => {
-            //     let value = self.values.iter().max().copied().unwrap_or(0);
-            //     MessageType::ReadOk { value }
-            // }
+            MessageType::Read => MessageType::ReadOk {
+                value: self.counter + self.known_counter.values().sum::<u64>(),
+            },
 
             MessageType::InitOk
             | MessageType::EchoOk { .. }
-            | MessageType::AddOk
-            | MessageType::ReadOk { .. }
             | MessageType::GenerateOk { .. }
-            // | MessageType::BrdReadOk { .. }
             | MessageType::BroadcastOk
-            | MessageType::TopologyOk => return,
+            | MessageType::BrdReadOk { .. }
+            | MessageType::TopologyOk
+            | MessageType::ReadOk { .. }
+            | MessageType::AddOk => return,
         };
 
         msg.body.message_type = message_type;

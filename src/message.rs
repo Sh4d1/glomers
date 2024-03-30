@@ -34,11 +34,12 @@ pub enum MessageType {
 
     Gossip {
         values: HashSet<u64>,
+        counter: u64,
     },
 
     // this should be read, but read is used for the grow only
-    Read,
-    ReadOk {
+    BrdRead,
+    BrdReadOk {
         messages: Vec<u64>,
     },
 
@@ -52,10 +53,10 @@ pub enum MessageType {
         delta: u64,
     },
     AddOk,
-    // Read,
-    // ReadOk {
-    //     value: u64,
-    // },
+    Read,
+    ReadOk {
+        value: u64,
+    },
     // kafka style log
 }
 
