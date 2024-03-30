@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::services::echo::Echo;
+use crate::services::{echo::Echo, generate::GenerateOk};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Init {
@@ -11,14 +11,20 @@ pub struct Init {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum MessageType {
-    #[serde(rename = "echo")]
-    Echo(Echo),
-    #[serde(rename = "echo_ok")]
-    EchoOk(Echo),
     #[serde(rename = "init")]
     Init(Init),
     #[serde(rename = "init_ok")]
     InitOk,
+
+    #[serde(rename = "echo")]
+    Echo(Echo),
+    #[serde(rename = "echo_ok")]
+    EchoOk(Echo),
+
+    #[serde(rename = "generate")]
+    Generate,
+    #[serde(rename = "generate_ok")]
+    GenerateOk(GenerateOk),
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -37,4 +43,3 @@ pub struct Message {
     pub dest: String,
     pub body: Body,
 }
-

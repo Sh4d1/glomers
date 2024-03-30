@@ -16,8 +16,8 @@ impl Server {
     ) -> Result<()> {
         let mut msg = msg;
 
-        if let Some(msg_id) = msg.body.msg_id {
-            msg.body.in_reply_to = Some(msg_id);
+        if let Some(msg_id) = &mut msg.body.msg_id {
+            msg.body.in_reply_to = Some(*msg_id);
         }
 
         let message_type = match msg.body.message_type {
@@ -27,7 +27,8 @@ impl Server {
                 msg.body.msg_id = None;
                 MessageType::InitOk
             }
-            MessageType::InitOk => unreachable!(),
+            MessageType::InitOk | MessageType::GenerateOk(_) => unreachable!(),
+            MessageType::Generate => MessageType::GenerateOk(Default::default()),
         };
         msg.body.message_type = message_type;
 
